@@ -1,0 +1,1258 @@
+Experiment List
+
+
+
+Build a spam classifier using TF-IDF and Naive Bayes on SMS data.
+ 
+# Importing necessary libraries
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import re
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+from nltk.corpus import stopwords
+from nltk.stem import PorterStemmer
+import nltk
+
+# Download stopwords if not already present
+nltk.download('stopwords')
+
+# Load the dataset
+df = pd.read_csv('/content/spam.csv', encoding='latin-1')
+
+# Drop unnecessary columns and rename
+df = df[['v1', 'v2']]
+df.columns = ['label', 'message']
+
+# Visualize the distribution
+plt.figure(figsize=(10, 2))
+df['label'].value_counts().plot(kind='barh', color=['green', 'red'])
+plt.title('Distribution of Spam vs Ham')
+plt.xlabel('Count')
+plt.show()
+
+# Preprocessing
+stop_words = set(stopwords.words('english'))
+ps = PorterStemmer()
+
+def preprocess_text(text):
+    text = text.lower()
+    text = re.sub(r'[^a-zA-Z0-9\s]', '', text)
+    text = ' '.join([ps.stem(word) for word in text.split() if word not in stop_words])
+    return text
+
+df['processed_message'] = df['message'].apply(preprocess_text)
+
+# Splitting the dataset
+X = df['processed_message']
+y = df['label']
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# TF-IDF vectorization
+vectorizer = TfidfVectorizer()
+X_train_tfidf = vectorizer.fit_transform(X_train)
+X_test_tfidf = vectorizer.transform(X_test)
+
+# Naive Bayes classification
+nb_classifier = MultinomialNB()
+nb_classifier.fit(X_train_tfidf, y_train)
+y_pred = nb_classifier.predict(X_test_tfidf)
+
+# Evaluation
+print("Initial Model Evaluation:")
+print(f"Accuracy: {accuracy_score(y_test, y_pred)}")
+print(classification_report(y_test, y_pred))
+cm = confusion_matrix(y_test, y_pred)
+plt.figure(figsize=(10, 2))
+sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+            xticklabels=['Predicted ham', 'Predicted spam'],
+            yticklabels=['Actual ham', 'Actual spam'])
+plt.show()
+
+# Grid Search for hyperparameter tuning
+param_grid = {
+    'alpha': [0.1, 0.5, 1.0, 1.5, 2.0],
+    'fit_prior': [True, False]
+}
+
+grid_search = GridSearchCV(estimator=nb_classifier,
+                           param_grid=param_grid,
+                           cv=5,
+                           scoring='f1_macro',
+                           n_jobs=-1)
+grid_search.fit(X_train_tfidf, y_train)
+
+# Results from GridSearch
+print(f"Best Parameters: {grid_search.best_params_}")
+print(f"Best Cross-Validation Score: {grid_search.best_score_}")
+
+# Evaluate best model
+best_model = grid_search.best_estimator_
+y_pred_best = best_model.predict(X_test_tfidf)
+
+print("Tuned Model Evaluation:")
+print(f"Test Accuracy: {accuracy_score(y_test, y_pred_best)}")
+print(classification_report(y_test, y_pred_best))
+cm_best = confusion_matrix(y_test, y_pred_best)
+plt.figure(figsize=(10, 2))
+sns.heatmap(cm_best, annot=True, fmt='d', cmap='Blues',
+            xticklabels=['Predicted ham', 'Predicted spam'],
+            yticklabels=['Actual ham', 'Actual spam'])
+plt.show()
+
+
+
+
+
+Perform hashtag frequency analysis from a COVID-19 tweet dataset.
+
+import pandas as pd
+import re
+from collections import Counter
+import matplotlib.pyplot as plt
+from sklearn.feature_extraction.text import TfidfVectorizer
+
+# Load the dataset
+skills = pd.read_csv('/content/job_skills.csv')
+
+# Drop rows with missing skill abbreviations
+skills = skills.dropna(subset=['skill_abr'])
+
+# Preprocess skill abbreviations: lowercase and remove special characters
+skills['skill_abr'] = skills['skill_abr'].str.lower().str.replace(r'[^\w\s]', '', regex=True)
+
+# TF-IDF Vectorization (bi-grams and uni-grams)
+vectorizer = TfidfVectorizer(stop_words=None, max_df=0.8, min_df=10, ngram_range=(1, 2))
+tfidf_matrix = vectorizer.fit_transform(skills['skill_abr'])
+
+# Extract feature names and their TF-IDF scores
+feature_names = vectorizer.get_feature_names_out()
+tfidf_scores = tfidf_matrix.sum(axis=0).A1
+tfidf_df = pd.DataFrame({'term': feature_names, 'score': tfidf_scores})
+
+# Sort terms by TF-IDF score
+tfidf_df = tfidf_df.sort_values(by='score', ascending=False)
+
+# Plot the top 20 most frequent cleaned skill abbreviations
+skills['skill_abr'].value_counts().head(20).plot(kind='barh', figsize=(10, 6), title='Top 20 Most Frequent Skills')
+plt.xlabel("Frequency")
+plt.ylabel("Skill")
+plt.tight_layout()
+plt.show()
+
+# Display the top 30 skills by TF-IDF score
+top_n = 30
+top_tfidf = tfidf_df.head(top_n)
+print(f"Top {top_n} In-Demand Skills by TF-IDF Score:\n")
+print(top_tfidf.to_string(index=False))
+
+
+
+
+Use TF-IDF and cosine similarity to find similar product descriptions in an e-commerce dataset.
+
+
+import pandas as pd
+import json
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
+
+# Preview first 5 lines of the JSON file
+with open('/content/flipkart_fashion_products_dataset.json', 'r') as f:
+    for _ in range(5):
+        print(f.readline())
+
+# Load full JSON file
+with open('/content/flipkart_fashion_products_dataset.json', 'r') as f:
+    data = json.load(f)
+
+# Convert to DataFrame
+df = pd.DataFrame(data)
+
+# Fill missing descriptions and convert to lowercase
+df['description'] = df['description'].fillna('').str.lower()
+
+# TF-IDF Vectorization
+tfidf = TfidfVectorizer(stop_words='english')
+tfidf_matrix = tfidf.fit_transform(df['description'])
+
+# Compute cosine similarity
+cosine_sim = cosine_similarity(tfidf_matrix, tfidf_matrix)
+
+# Function to get similar products
+def get_similar_products(product_index, top_n=5):
+    similarity_scores = list(enumerate(cosine_sim[product_index]))
+    similarity_scores = sorted(similarity_scores, key=lambda x: x[1], reverse=True)
+    top_indices = [i for i, score in similarity_scores[1:top_n+1]]  # Exclude self
+    return df.iloc[top_indices][['title', 'description', 'url']]
+
+# Show example product and its similar products
+print("🔹 Original Product:\n")
+print(df.iloc[0][['title', 'description', 'url']])
+print("\n🔸 Top 5 Similar Products:\n")
+print(get_similar_products(0))
+
+# Show top TF-IDF terms for first 3 products
+feature_names = tfidf.get_feature_names_out()
+for i in range(3):
+    row = tfidf_matrix[i].toarray().flatten()
+    tfidf_df = pd.DataFrame({'term': feature_names, 'tfidf': row})
+    top_words = tfidf_df[tfidf_df['tfidf'] > 0].sort_values(by='tfidf', ascending=False).head(5)
+    print(f"\n🔸 Product {i} Title: {df.iloc[i]['title']}")
+    print("Top words:", ', '.join(top_words['term'].values))
+
+# Remove self-similarity from cosine matrix
+np.fill_diagonal(cosine_sim, 0)
+
+# Get top 5 most similar product pairs
+similar_pairs = []
+for i in range(len(df)):
+    for j in range(i + 1, len(df)):
+        similar_pairs.append((i, j, cosine_sim[i, j]))
+
+similar_pairs = sorted(similar_pairs, key=lambda x: x[2], reverse=True)[:5]
+
+print("\n🔗 Top 5 Most Similar Product Pairs:")
+for i, j, score in similar_pairs:
+    print(f"\nProduct {i}: {df.iloc[i]['title']}")
+    print(f"Product {j}: {df.iloc[j]['title']}")
+    print(f"Similarity: {score:.4f}")
+
+
+
+
+Analyze LinkedIn job postings using TF-IDF to identify in-demand skills.
+
+
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.feature_extraction.text import TfidfVectorizer
+
+# Load and preprocess data
+skills = pd.read_csv('/content/job_skills.csv')
+skills = skills.dropna(subset=['skill_abr'])
+
+# Normalize text: lowercase + remove special characters
+skills['skill_abr'] = skills['skill_abr'].str.lower().str.replace(r'[^\w\s]', '', regex=True)
+
+# TF-IDF vectorization
+vectorizer = TfidfVectorizer(stop_words=None, max_df=0.8, min_df=10, ngram_range=(1, 2))
+tfidf_matrix = vectorizer.fit_transform(skills['skill_abr'])
+
+# Extract terms and scores
+feature_names = vectorizer.get_feature_names_out()
+tfidf_scores = tfidf_matrix.sum(axis=0).A1
+tfidf_df = pd.DataFrame({'term': feature_names, 'score': tfidf_scores})
+tfidf_df = tfidf_df.sort_values(by='score', ascending=False)
+
+# Plot top 20 most frequent skills (raw frequency)
+plt.figure(figsize=(10, 6))
+skills['skill_abr'].value_counts().head(20).plot(kind='barh', color='skyblue')
+plt.title('Top 20 Most Frequent Skills')
+plt.xlabel('Frequency')
+plt.ylabel('Skill')
+plt.tight_layout()
+plt.show()
+
+# Print top 30 skills by TF-IDF score
+top_n = 30
+top_tfidf = tfidf_df.head(top_n)
+
+print(f"\nTop {top_n} In-Demand Skills by TF-IDF Score:\n")
+print(top_tfidf.to_string(index=False))
+
+
+
+Create a social network graph using retweet data. Find influencer nodes using centrality measures.
+
+
+import pandas as pd
+import networkx as nx
+import matplotlib.pyplot as plt
+
+# Load dataset
+df = pd.read_csv('higgs-retweet_network.edgelist', sep=' ', names=['source', 'target', 'timestamp'])
+
+# Build directed graph
+G = nx.DiGraph()
+edges = list(zip(df['source'], df['target']))
+G.add_edges_from(edges)
+
+print("Number of nodes:", G.number_of_nodes())
+print("Number of edges:", G.number_of_edges())
+
+# Compute centrality measures
+in_degree_centrality = nx.in_degree_centrality(G)
+betweenness_centrality = nx.betweenness_centrality(G, k=1000, seed=42)  # Approximation
+pagerank = nx.pagerank(G, alpha=0.85)
+
+# Combine into a DataFrame
+centrality_df = pd.DataFrame({
+    'node': list(G.nodes()),
+    'in_degree': pd.Series(in_degree_centrality),
+    'betweenness': pd.Series(betweenness_centrality),
+    'pagerank': pd.Series(pagerank)
+})
+
+# Top 10 influencers by PageRank
+influencers = centrality_df.sort_values(by='pagerank', ascending=False).head(10)
+print("\nTop 10 Influential Users (by PageRank):")
+print(influencers)
+
+# Visualize subgraph of top influencers
+top_nodes = influencers['node'].tolist()
+subgraph = G.subgraph(top_nodes)
+
+plt.figure(figsize=(10, 8))
+pos = nx.spring_layout(subgraph, seed=42)
+nx.draw_networkx(subgraph, pos, with_labels=True, node_size=700,
+                 node_color='skyblue', edge_color='gray', font_size=10)
+plt.title("Top Influencers Subgraph")
+plt.axis('off')
+plt.show()
+
+
+
+Analyze social network structure using Facebook page-page network. Identify clusters and calculate modularity.
+
+import networkx as nx
+import pandas as pd
+import matplotlib.pyplot as plt
+import community as community_louvain
+import matplotlib.cm as cm
+import random
+
+# Load the Facebook network
+G = nx.read_edgelist('facebook_combined.txt', create_using=nx.Graph(), nodetype=int)
+print("Number of nodes:", G.number_of_nodes())
+print("Number of edges:", G.number_of_edges())
+
+# Perform Louvain community detection
+partition = community_louvain.best_partition(G)
+
+# Add community as node attribute
+nx.set_node_attributes(G, partition, 'community')
+
+# Community stats
+num_communities = len(set(partition.values()))
+print("Detected communities:", num_communities)
+
+modularity_score = community_louvain.modularity(partition, G)
+print("Modularity of the network:", modularity_score)
+
+# Visualization of a sample subgraph
+sample_nodes = random.sample(list(G.nodes()), 200)
+subgraph = G.subgraph(sample_nodes)
+colors = [partition[node] for node in subgraph.nodes()]
+
+plt.figure(figsize=(10, 8))
+pos = nx.spring_layout(subgraph, seed=42)
+nx.draw_networkx_nodes(subgraph, pos, node_size=50, cmap=cm.tab20, node_color=colors)
+nx.draw_networkx_edges(subgraph, pos, alpha=0.5)
+plt.title("Facebook Subgraph with Community Clusters (Louvain)")
+plt.axis('off')
+plt.show()
+
+
+
+
+Use NetworkX to analyze political blog network and find opinion leaders.
+import pandas as pd
+import networkx as nx
+import matplotlib.pyplot as plt
+
+# Step 1: Load edges and clean column names
+edges_df = pd.read_csv('edges.csv')
+edges_df.columns = edges_df.columns.str.strip().str.lstrip('#').str.strip()
+
+# Build directed graph
+G = nx.from_pandas_edgelist(edges_df, source='source', target='target', create_using=nx.DiGraph)
+
+# Step 2: Load node attributes
+nodes_df = pd.read_csv('nodes.csv')
+nodes_df.columns = nodes_df.columns.str.strip().str.lstrip('#').str.strip()
+
+# Map label attribute (political alignment)
+attributes = nodes_df.set_index('index')['value'].to_dict()
+nx.set_node_attributes(G, attributes, 'label')
+
+print(f"Graph has {G.number_of_nodes()} nodes and {G.number_of_edges()} edges.")
+
+# Step 3: Centrality Measures
+pagerank = nx.pagerank(G, alpha=0.85)
+indegree_centrality = nx.in_degree_centrality(G)
+hubs, authorities = nx.hits(G)
+
+# Top 10 blogs by PageRank
+top_pagerank = sorted(pagerank.items(), key=lambda x: x[1], reverse=True)[:10]
+print("\nTop 10 blogs by PageRank:")
+for node, score in top_pagerank:
+    print(f"Blog {node} - PageRank: {score:.4f}")
+
+# Step 4: Visualization
+pos = nx.spring_layout(G, seed=42)
+
+# Node color by political label (0 = blue, 1 = red)
+colors = ['blue' if G.nodes[n].get('label') == 0 else 'red' for n in G.nodes]
+sizes = [pagerank[n] * 5000 for n in G.nodes]
+
+plt.figure(figsize=(12, 10))
+nx.draw_networkx_nodes(G, pos, node_color=colors, node_size=sizes, alpha=0.7)
+nx.draw_networkx_edges(G, pos, alpha=0.2, arrowsize=4)
+plt.title("Political Blog Network - Colored by Political Alignment\nNode Size = PageRank", fontsize=14)
+plt.axis('off')
+
+# Add legend
+from matplotlib.patches import Patch
+legend_elements = [
+    Patch(facecolor='blue', label='Liberal'),
+    Patch(facecolor='red', label='Conservative')
+]
+plt.legend(handles=legend_elements, loc='best')
+plt.show()
+
+# Step 5: Louvain Community Detection
+import community as community_louvain
+
+G_undirected = G.to_undirected()
+partition = community_louvain.best_partition(G_undirected)
+nx.set_node_attributes(G_undirected, partition, 'community')
+
+num_communities = len(set(partition.values()))
+modularity_score = community_louvain.modularity(partition, G_undirected)
+print(f"\nDetected communities: {num_communities}")
+print(f"Modularity of the network: {modularity_score:.4f}")
+
+# Optional: Visualize communities (on small sample or entire graph)
+import matplotlib.cm as cm
+sample_nodes = list(G_undirected.nodes())[:300]  # adjust size if needed
+subgraph = G_undirected.subgraph(sample_nodes)
+community_colors = [partition[n] for n in subgraph.nodes()]
+
+plt.figure(figsize=(12, 10))
+pos = nx.spring_layout(subgraph, seed=42)
+nx.draw_networkx_nodes(subgraph, pos, node_color=community_colors, cmap=cm.tab20, node_size=40)
+nx.draw_networkx_edges(subgraph, pos, alpha=0.3)
+plt.title("Community Clusters (Louvain) in Subgraph")
+plt.axis('off')
+plt.show()
+
+# Step 6: Save top blogs by PageRank
+top_df = pd.DataFrame(top_pagerank, columns=['node', 'pagerank'])
+top_df.to_csv("top_opinion_leaders.csv", index=False)
+
+
+
+
+Visualize co-occurrence network from Amazon product reviews using NetworkX.
+Notebook - 
+import pandas as pd
+
+# Load dataset (skip bad lines)
+df = pd.read_csv('/content/amazon_reviews.csv', engine='python', on_bad_lines='skip')
+print("Columns in dataset:", df.columns)
+
+# Ensure 'itemName' is a string
+df['itemName'] = df['itemName'].astype(str)
+
+# Group by user and collect unique products reviewed
+user_products = df.groupby('userName')['itemName'].apply(set)
+
+# Step 2: Build co-occurrence dictionary
+from itertools import combinations
+from collections import defaultdict
+
+co_occurrence = defaultdict(int)
+
+for products in user_products:
+    for pair in combinations(products, 2):
+        pair = tuple(sorted(pair))  # ensure consistent ordering
+        co_occurrence[pair] += 1
+
+# Step 3: Build Network Graph
+import networkx as nx
+
+G = nx.Graph()
+
+# Add edges with weights (only if co-reviewed by 2+ users)
+for (item1, item2), weight in co_occurrence.items():
+    if weight >= 2:
+        G.add_edge(item1, item2, weight=weight)
+
+print(f"\nGraph has {G.number_of_nodes()} nodes and {G.number_of_edges()} edges.")
+
+# Step 4: Visualization
+import matplotlib.pyplot as plt
+
+plt.figure(figsize=(12, 12))
+pos = nx.spring_layout(G, k=0.1, seed=42)
+
+nx.draw_networkx_nodes(G, pos, node_size=40, node_color='skyblue', alpha=0.8)
+nx.draw_networkx_edges(G, pos, alpha=0.3)
+
+plt.title("Amazon Product Co-occurrence Network", fontsize=15)
+plt.axis('off')
+plt.show()
+
+# Step 5: Centrality Analysis
+degree_centrality = nx.degree_centrality(G)
+top_products = sorted(degree_centrality.items(), key=lambda x: x[1], reverse=True)[:10]
+
+print("\nTop 10 Central Products (most co-reviewed):")
+for product, score in top_products:
+    print(f"{product} - Centrality: {score:.4f}")
+
+# Step 6: Community Detection
+from networkx.algorithms import community
+
+communities = community.greedy_modularity_communities(G)
+
+print(f"\nFound {len(communities)} communities.")
+print("Sizes of first 3 communities:", [len(c) for c in list(communities)[:3]])
+
+
+
+
+Perform sentiment analysis on Twitter data about airlines. Classify tweets into positive, negative, and neutral categories. Evaluate with accuracy, precision, recall, and F1-score.
+# Install NLTK if not already installed
+# !pip install nltk
+
+import pandas as pd
+import numpy as np
+import re
+import nltk
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+from nltk.corpus import stopwords
+from nltk.stem import PorterStemmer
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+
+# Download stopwords
+nltk.download('stopwords')
+stop_words = set(stopwords.words('english'))
+stemmer = PorterStemmer()
+
+# Load dataset
+df = pd.read_csv('/content/Tweets.csv')  # Update path if needed
+print("Initial Data:\n", df[['text', 'airline_sentiment']].head())
+
+# Clean text
+def clean_text(text):
+    text = re.sub(r'http\S+', '', text)        # Remove URLs
+    text = re.sub(r'@\w+', '', text)           # Remove mentions
+    text = re.sub(r'#\w+', '', text)           # Remove hashtags
+    text = re.sub(r'[^A-Za-z\s]', '', text)    # Remove special characters
+    text = text.lower()                        # Lowercase
+    tokens = text.split()
+    tokens = [stemmer.stem(word) for word in tokens if word not in stop_words]
+    return ' '.join(tokens)
+
+df['clean_text'] = df['text'].apply(clean_text)
+
+# Encode labels
+le = LabelEncoder()
+df['label'] = le.fit_transform(df['airline_sentiment'])  # Maps: {'negative': 0, 'neutral': 1, 'positive': 2}
+
+# Split dataset
+X = df['clean_text']
+y = df['label']
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# TF-IDF vectorization
+vectorizer = TfidfVectorizer(max_features=5000)
+X_train_vec = vectorizer.fit_transform(X_train)
+X_test_vec = vectorizer.transform(X_test)
+
+# Train Logistic Regression model
+model = LogisticRegression()
+model.fit(X_train_vec, y_train)
+
+# Predict
+y_pred = model.predict(X_test_vec)
+
+# Evaluation
+print("Accuracy:", accuracy_score(y_test, y_pred))
+print("\nClassification Report:\n", classification_report(y_test, y_pred, target_names=le.classes_))
+
+# Confusion matrix
+cm = confusion_matrix(y_test, y_pred)
+plt.figure(figsize=(6, 4))
+sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=le.classes_, yticklabels=le.classes_)
+plt.xlabel("Predicted")
+plt.ylabel("Actual")
+plt.title("Confusion Matrix")
+plt.show()
+
+# Show sample predictions
+results_df = pd.DataFrame({
+    'Tweet': X_test,
+    'Predicted Sentiment': le.inverse_transform(y_pred),
+    'Actual Sentiment': le.inverse_transform(y_test)
+})
+print("\nSample Predictions:\n", results_df.head(10))
+
+
+
+Apply VADER/TextBlob to analyze sentiments of Amazon product reviews. Visualize sentiment distribution.
+# prompt: give me code for training model VADER to analyze sentiments of Amazon product reviews.
+# Visualize sentiment distribution on Reviews.csv file i uploaded give me full python code
+!pip install vaderSentiment
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+
+# Assuming 'Reviews.csv' is in your current directory or you've specified the correct path
+df = pd.read_csv('/content/Reviews.csv')
+
+# Initialize VADER
+analyzer = SentimentIntensityAnalyzer()
+
+# Function to get the sentiment
+def get_vader_sentiment(text):
+    scores = analyzer.polarity_scores(text)
+    compound = scores['compound']
+    if compound >= 0.05:
+        return 'positive'
+    elif compound <= -0.05:
+        return 'negative'
+    else:
+        return 'neutral'
+
+# Apply sentiment analysis to the 'Text' column (replace 'Text' with your actual column name)
+if 'Text' in df.columns:  # Check if 'Text' column exists
+    df['sentiment'] = df['Text'].astype(str).apply(get_vader_sentiment)
+elif 'reviewText' in df.columns: # Check for 'reviewText' column
+    df['sentiment'] = df['reviewText'].astype(str).apply(get_vader_sentiment)
+else:
+    print("Error: Neither 'Text' nor 'reviewText' column found in the dataframe.")
+    # Handle the error appropriately - exit or use a different column
+    exit()
+
+# Visualize sentiment distribution
+plt.figure(figsize=(8, 6))
+sns.countplot(x='sentiment', data=df)
+plt.title('Sentiment Distribution of Amazon Product Reviews')
+plt.xlabel('Sentiment')
+plt.ylabel('Number of Reviews')
+plt.show()
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+
+# Initialize analyzer (if not already initialized)
+analyzer = SentimentIntensityAnalyzer()
+
+# Function to get sentiment from text
+def predict_sentiment(text):
+    score = analyzer.polarity_scores(text)['compound']
+    if score >= 0.05:
+        return 'positive'
+    elif score <= -0.05:
+        return 'negative'
+    else:
+        return 'neutral'
+
+# Example: Predicting sentiment for a single review
+sample_review = "This product is amazing! I absolutely loved it."
+predicted_sentiment = predict_sentiment(sample_review)
+print(f"Review: {sample_review}\nPredicted Sentiment: {predicted_sentiment}")
+
+# Example: Predicting sentiments for a list of reviews
+sample_reviews = [
+    "The item arrived late and was damaged.",
+    "Great value for money. Highly recommend it!",
+    "It’s okay, not the best but not the worst.",
+    "Terrible quality. Would not buy again."
+]
+
+print("\nBatch predictions:")
+for review in sample_reviews:
+    sentiment = predict_sentiment(review)
+    print(f"Review: {review}\nSentiment: {sentiment}\n")
+
+
+
+Analyze IMDb movie reviews using TF-IDF and implement a logistic regression classifier.
+# prompt: give me python code to implement Analyze IMDb movie reviews using TF-IDF and implement a logistic regression
+# classifier for my attached dataset
+
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, classification_report
+
+# Load the dataset (replace 'imdb_reviews.csv' with your actual file name)
+try:
+  df = pd.read_csv('IMDB Dataset.csv') 
+except FileNotFoundError:
+  print("Error: 'imdb_reviews.csv' not found. Please upload your dataset.")
+  exit()
+
+# Preprocessing (assuming your dataset has 'review' and 'sentiment' columns)
+# Check for and handle missing values
+df.dropna(subset=['review', 'sentiment'], inplace=True)
+
+# Convert sentiment to numerical labels (if needed)
+sentiment_mapping = {'positive': 1, 'negative': 0} # Example mapping
+df['sentiment'] = df['sentiment'].map(sentiment_mapping)
+
+# Split the data into training and testing sets
+X = df['review']
+y = df['sentiment']
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# TF-IDF vectorization
+vectorizer = TfidfVectorizer(max_features=5000) # Adjust max_features as needed
+X_train_vec = vectorizer.fit_transform(X_train)
+X_test_vec = vectorizer.transform(X_test)
+
+# Logistic Regression model
+classifier = LogisticRegression()
+classifier.fit(X_train_vec, y_train)
+
+# Predictions
+y_pred = classifier.predict(X_test_vec)
+
+
+# Evaluation
+accuracy = accuracy_score(y_test, y_pred)
+print(f"Accuracy: {accuracy}")
+print(classification_report(y_test, y_pred))
+
+# Example prediction (replace with your own review)
+new_review = ["This movie was amazing!"]
+new_review_vec = vectorizer.transform(new_review)
+prediction = classifier.predict(new_review_vec)
+
+if prediction[0] == 1:
+  print("Prediction: Positive")
+else:
+  print("Prediction: Negative")
+
+
+
+
+Perform comparative sentiment analysis for Patanjali vs HUL using pre-downloaded tweet data.
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# Load training and testing data
+train_df = pd.read_csv('/content/Dataset - Train.csv')
+test_df = pd.read_csv('/content/Dataset - Test.csv')
+
+# Combine for full analysis
+df = pd.concat([train_df, test_df], ignore_index=True)
+
+# Print columns and a preview of the data
+print(df.columns)
+print(df.head())
+
+# Normalize brand and sentiment columns
+df['brand'] = df['emotion_in_tweet_is_directed_at'].str.lower()
+df['sentiment_raw'] = df['is_there_an_emotion_directed_at_a_brand_or_product'].str.lower()
+
+# Map sentiments to positive, negative, or neutral
+def map_sentiment(text):
+    if isinstance(text, str):
+        text = text.lower()
+        if 'positive' in text:
+            return 'positive'
+        elif 'negative' in text:
+            return 'negative'
+    return 'neutral'
+
+df['sentiment'] = df['sentiment_raw'].apply(map_sentiment)
+
+# Filter tweets related to Apple and Android
+apple_df = df[df['brand'].str.contains('apple', na=False)]
+android_df = df[df['brand'].str.contains('android', na=False)]
+
+# Plot sentiment distribution for Apple and Android
+fig, axs = plt.subplots(1, 2, figsize=(12, 5))
+
+sns.countplot(data=apple_df, x='sentiment', ax=axs[0])
+axs[0].set_title('Apple Sentiment Distribution')
+axs[0].set_xlabel('Sentiment')
+
+sns.countplot(data=android_df, x='sentiment', ax=axs[1])
+axs[1].set_title('Android Sentiment Distribution')
+axs[1].set_xlabel('Sentiment')
+
+plt.tight_layout()
+plt.show()
+
+# Print sentiment breakdown
+print("Apple Sentiment Breakdown:")
+print(apple_df['sentiment'].value_counts(normalize=True))
+
+print("\nAndroid Sentiment Breakdown:")
+print(android_df['sentiment'].value_counts(normalize=True))
+
+
+Build a word cloud and perform n-gram analysis on Yelp restaurant reviews. Identify common complaint areas.
+Notebook - 
+ 🔗 Dataset: Kaggle - Yelp Dataset
+Yelp Dataset
+
+Use news headlines to classify fake vs real news using NLP methods.
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+from sklearn.pipeline import Pipeline
+from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import classification_report, accuracy_score, confusion_matrix
+
+# Load datasets
+true_df = pd.read_csv('/content/Fake.csv')
+fake_df = pd.read_csv('/content/True.csv')
+
+# Add labels
+true_df['label'] = 'true'
+fake_df['label'] = 'fake'
+
+# Combine and clean
+df = pd.concat([true_df, fake_df], ignore_index=True)
+df.drop_duplicates(inplace=True)
+
+# Visualize class distribution
+plt.figure()
+df['label'].value_counts().plot(kind='bar')
+plt.title('Class Distribution')
+plt.xlabel('Label')
+plt.ylabel('Count')
+plt.show()
+
+# Prepare data
+df['text'] = df['text'].astype(str)
+X = df['text']
+y = df['label']
+
+# Train-test split
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42, stratify=y
+)
+
+# Pipeline with CountVectorizer
+bow_pipeline = Pipeline([
+    ('cv', CountVectorizer()),
+    ('clf', LogisticRegression(max_iter=1000)),
+])
+
+bow_pipeline.fit(X_train, y_train)
+y_pred_bow = bow_pipeline.predict(X_test)
+
+# Evaluation for CountVectorizer pipeline
+print("\n--- CountVectorizer + LogisticRegression ---")
+print("Accuracy:", accuracy_score(y_test, y_pred_bow))
+print("\nClassification Report:\n", classification_report(y_test, y_pred_bow))
+print("Confusion Matrix:\n", confusion_matrix(y_test, y_pred_bow))
+
+# Pipeline with TfidfVectorizer
+tfidf_pipeline = Pipeline([
+    ('tfidf', TfidfVectorizer(stop_words='english')),
+    ('clf', LogisticRegression(max_iter=1000)),
+])
+
+tfidf_pipeline.fit(X_train, y_train)
+y_pred_tfidf = tfidf_pipeline.predict(X_test)
+
+# Evaluation for TfidfVectorizer pipeline
+print("\n--- TfidfVectorizer + LogisticRegression ---")
+print("Accuracy:", accuracy_score(y_test, y_pred_tfidf))
+print("\nClassification Report:\n", classification_report(y_test, y_pred_tfidf))
+print("Confusion Matrix:\n", confusion_matrix(y_test, y_pred_tfidf))
+
+# ======================
+# Predict on new examples
+# ======================
+sample_texts = [
+    "President signs new healthcare reform bill amid bipartisan support.",
+    "Scientists discover a method to talk to aliens using crystals.",
+    "Breaking: Government confirms UFO sighting over Washington.",
+    "Apple Inc. reports record profits in the last quarter of 2024."
+]
+
+# Predict using CountVectorizer model
+print("\nPredictions using CountVectorizer model:")
+for text in sample_texts:
+    pred = bow_pipeline.predict([text])[0]
+    print(f"'{text}' => {pred}")
+
+# Predict using TfidfVectorizer model
+print("\nPredictions using TfidfVectorizer model:")
+for text in sample_texts:
+    pred = tfidf_pipeline.predict([text])[0]
+    print(f"'{text}' => {pred}")
+
+
+Compare website traffic metrics (bounce rate, visit duration) of two education sites using SimilarWeb or pre-downloaded datasets.
+ 🔗 Dataset: Kaggle - Website Traffic Data
+Website Traffic Data
+Analyze clickstream data to understand user navigation paths across web pages.
+import pandas as pd
+
+df = pd.read_csv('/content/e-shop clothing 2008.csv', delimiter=';')
+print(df.columns)
+print(df.head())
+
+
+df['date'] = pd.to_datetime(df[['year', 'month', 'day']])
+
+# Sort data for sequential analysis
+df = df.sort_values(by=['session ID', 'order'])
+
+print(f"Total sessions: {df['session ID'].nunique()}")
+
+df['page 1 (main category)'].value_counts().head(10).plot(kind='bar')
+
+df['page 2 (clothing model)'].value_counts().head(10)
+
+# Group by session and collect visited pages
+paths = df.groupby('session ID')['page 1 (main category)'].apply(list)
+paths.head()
+
+drop_offs = df.groupby('session ID').tail(1)
+drop_off_counts = drop_offs['page 1 (main category)'].value_counts().head(10)
+drop_off_counts.plot(kind='bar', title="Most Common Drop-off Pages")
+
+
+daily_visits = df.groupby('date').size()
+daily_visits.plot(title="Daily Visits", figsize=(10, 5))
+
+df['month_year'] = df['date'].dt.to_period('M')
+df.groupby('month_year').size().plot(kind='line', title='Monthly Visit Trend')
+
+
+Perform user behavior segmentation on mobile web data using clustering (K-means).
+import pandas as pd
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
+from sklearn.metrics import adjusted_rand_score
+
+df = pd.read_csv('/content/user_behavior_dataset.csv')
+
+print(df.head())
+print(df.info())
+
+df.drop(['User ID'], axis=1, inplace=True)
+
+label_encoders = {}
+categorical_columns = ['Gender', 'Operating System', 'Device Model']
+
+for col in categorical_columns:
+    le = LabelEncoder()
+    df[col] = le.fit_transform(df[col])
+    label_encoders[col] = le
+
+features = [
+    'App Usage Time (min/day)', 'Screen On Time (hours/day)',
+    'Battery Drain (mAh/day)', 'Number of Apps Installed',
+    'Data Usage (MB/day)', 'Age', 'Gender', 'Operating System', 'Device Model'
+]
+
+X = df[features]
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+
+sse = []
+K = range(1, 11)
+for k in K:
+    kmeans = KMeans(n_clusters=k, random_state=42)
+    kmeans.fit(X_scaled)
+    sse.append(kmeans.inertia_)
+
+# Plot Elbow Curve
+plt.figure(figsize=(8, 5))
+plt.plot(K, sse, 'bx-')
+plt.xlabel('Number of Clusters (k)')
+plt.ylabel('Sum of Squared Errors (SSE)')
+plt.title('Elbow Method For Optimal k')
+plt.grid(True)
+plt.show()
+
+optimal_k = 2
+kmeans = KMeans(n_clusters=optimal_k, random_state=42)
+df['Cluster'] = kmeans.fit_predict(X_scaled)
+
+pca = PCA(n_components=2)
+components = pca.fit_transform(X_scaled)
+
+plt.figure(figsize=(8, 6))
+sns.scatterplot(x=components[:, 0], y=components[:, 1], hue=df['Cluster'], palette='Set2')
+plt.title('K-means Clustering Results (PCA Projection)')
+plt.xlabel('PCA 1')
+plt.ylabel('PCA 2')
+plt.legend(title='Cluster')
+plt.grid(True)
+plt.show()
+
+cluster_profiles = df.groupby('Cluster')[features].mean()
+print("Cluster Profiles:\n", cluster_profiles)
+
+Compare 2 hospital websites using Google Trends and SimilarWeb and analyze results
+
+Create a synthetic social network using NetworkX. Apply various visualizations using matplotlib.
+import networkx as nx
+import matplotlib.pyplot as plt
+import random
+
+G = nx.erdos_renyi_graph(n=30, p=0.15, seed=42)
+
+genders = ['Male', 'Female']
+for node in G.nodes():
+    G.nodes[node]['gender'] = random.choice(genders)
+    G.nodes[node]['age'] = random.randint(18, 60)
+
+plt.figure(figsize=(8, 6))
+pos = nx.spring_layout(G, seed=42)
+node_colors = ['skyblue' if G.nodes[n]['gender'] == 'Male' else 'lightcoral' for n in G.nodes()]
+nx.draw(G, pos, with_labels=True, node_color=node_colors, edge_color='gray', node_size=600)
+plt.title("Synthetic Social Network - Spring Layout (colored by gender)")
+plt.show()
+
+plt.figure(figsize=(8, 6))
+pos = nx.circular_layout(G)
+nx.draw(G, pos, with_labels=True, node_color='orange', edge_color='gray', node_size=600)
+plt.title("Synthetic Social Network - Circular Layout")
+plt.show()
+
+plt.figure(figsize=(8, 6))
+pos = nx.random_layout(G, seed=42)
+nx.draw(G, pos, with_labels=True, node_color='limegreen', edge_color='gray', node_size=600)
+plt.title("Synthetic Social Network - Random Layout")
+plt.show()
+
+print("Number of nodes:", G.number_of_nodes())
+print("Number of edges:", G.number_of_edges())
+print("Average degree:", sum(dict(G.degree()).values()) / G.number_of_nodes())
+
+plt.figure(figsize=(8, 6))
+pos = nx.spring_layout(G, seed=42)
+degrees = dict(G.degree())
+node_color = [degrees[n] for n in G.nodes()]
+nodes = nx.draw_networkx_nodes(G, pos, node_color=node_color, cmap=plt.cm.viridis, node_size=600)
+nx.draw_networkx_edges(G, pos)
+nx.draw_networkx_labels(G, pos)
+plt.title("Nodes Colored by Degree")
+cbar = plt.colorbar(nodes)
+cbar.set_label("Degree")
+plt.show()
+
+plt.figure(figsize=(8, 6))
+centrality = nx.betweenness_centrality(G)
+node_sizes = [5000 * centrality[n] + 100 for n in G.nodes()]
+nx.draw(G, pos, with_labels=True, node_size=node_sizes, node_color='dodgerblue', edge_color='gray')
+plt.title("Node Size by Betweenness Centrality")
+plt.show()
+
+for u, v in G.edges():
+    G[u][v]['weight'] = round(random.uniform(0.5, 1.5), 2)
+
+plt.figure(figsize=(8, 6))
+edge_labels = nx.get_edge_attributes(G, 'weight')
+nx.draw(G, pos, with_labels=True, node_color='lightblue', edge_color='gray', node_size=600)
+nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_size=8)
+plt.title("Graph with Edge Weights (Relationship Strength)")
+plt.show()
+
+Calculate degree, closeness, and eigenvector centrality for nodes in the social graph. Interpret the significance.
+import networkx as nx
+import pandas as pd
+
+G = nx.erdos_renyi_graph(n=30, p=0.15, seed=42)
+
+# 1. Degree Centrality
+deg_centrality = nx.degree_centrality(G)
+
+# 2. Closeness Centrality
+closeness_centrality = nx.closeness_centrality(G)
+
+# 3. Eigenvector Centrality
+eigenvector_centrality = nx.eigenvector_centrality(G, max_iter=1000)
+
+# 4. Combine all into a DataFrame for easy viewing
+centrality_df = pd.DataFrame({
+    'Degree Centrality': deg_centrality,
+    'Closeness Centrality': closeness_centrality,
+    'Eigenvector Centrality': eigenvector_centrality
+}).round(3)
+
+# Sort by eigenvector centrality for influence
+centrality_df = centrality_df.sort_values(by='Eigenvector Centrality', ascending=False)
+
+# Display top 5 influential nodes
+print("Top 5 Most Influential Nodes:\n")
+print(centrality_df.head(5))
+
+import matplotlib.pyplot as plt
+
+# Top 10 nodes by eigenvector centrality
+top_nodes = centrality_df.head(10)
+
+top_nodes[['Degree Centrality', 'Closeness Centrality', 'Eigenvector Centrality']].plot(
+    kind='bar', figsize=(10, 6)
+)
+plt.title("Top 10 Nodes by Centrality Measures")
+plt.ylabel("Centrality Score")
+plt.xlabel("Node")
+plt.xticks(rotation=0)
+plt.legend(loc='upper right')
+plt.tight_layout()
+plt.show()
+
+
+pos = nx.spring_layout(G, seed=42)
+eigenvector = nx.eigenvector_centrality(G)
+
+# Normalize centrality for visualization
+node_color = [eigenvector[n] for n in G.nodes()]
+node_size = [1000 * eigenvector[n] for n in G.nodes()]
+
+plt.figure(figsize=(8, 6))
+nodes = nx.draw_networkx_nodes(G, pos, node_color=node_color, cmap=plt.cm.plasma, node_size=node_size)
+nx.draw_networkx_edges(G, pos, alpha=0.4)
+nx.draw_networkx_labels(G, pos, font_size=8)
+plt.colorbar(nodes, label='Eigenvector Centrality')
+plt.title("Network Graph - Node Color & Size by Eigenvector Centrality")
+plt.show()
+
+
+plt.figure(figsize=(8, 6))
+plt.scatter(
+    centrality_df['Degree Centrality'],
+    centrality_df['Eigenvector Centrality'],
+    c=centrality_df['Closeness Centrality'],
+    cmap='viridis',
+    s=100,
+    edgecolor='k'
+)
+plt.xlabel('Degree Centrality')
+plt.ylabel('Eigenvector Centrality')
+plt.title('Centrality Relationship: Degree vs. Eigenvector (Color = Closeness)')
+cbar = plt.colorbar()
+cbar.set_label('Closeness Centrality')
+plt.grid(True)
+plt.show()
+
+
+
+
+Perform keyword sentiment tracking for Patanjali products using Lexalytics or any sentiment dashboard. What are the top positive and negative phrases?
+
+
+Track engagement metrics for two educational institutions on Facebook and Instagram. What trends do you observe in their social media strategies?
+
+Calculate degree, closeness, and eigenvector centrality for nodes in the social graph. Interpret the significance.
+import pandas as pd
+import networkx as nx
+
+G = nx.read_edgelist('facebook_combined.txt', create_using=nx.Graph(), nodetype=int)
+
+degree_centrality = nx.degree_centrality(G)
+closeness_centrality = nx.closeness_centrality(G)
+eigenvector_centrality = nx.eigenvector_centrality(G, max_iter=1000)
+
+centrality_df = pd.DataFrame({
+    'Degree Centrality': degree_centrality,
+    'Closeness Centrality': closeness_centrality,
+    'Eigenvector Centrality': eigenvector_centrality
+})
+
+print(centrality_df.sort_values('Eigenvector Centrality', ascending=False).head())
+
+
+
+Analyze Zachary's Karate Club network using NetworkX. Perform the following tasks:
+import networkx as nx
+import matplotlib.pyplot as plt
+import pandas as pd
+
+G = nx.karate_club_graph()
+
+plt.figure(figsize=(10, 7))
+pos = nx.spring_layout(G, seed=42)
+nx.draw(G, pos, with_labels=True, node_color='lightblue', node_size=800, font_size=10, edge_color='gray')
+plt.title("Zachary's Karate Club Network")
+plt.show()
+
+degree = nx.degree_centrality(G)
+closeness = nx.closeness_centrality(G)
+betweenness = nx.betweenness_centrality(G)
+eigenvector = nx.eigenvector_centrality(G, max_iter=1000)
+
+centrality_df = pd.DataFrame({
+    'Degree Centrality': degree,
+    'Closeness Centrality': closeness,
+    'Betweenness Centrality': betweenness,
+    'Eigenvector Centrality': eigenvector
+})
+
+centrality_df = centrality_df.round(3)
+
+print("\n🔝 Top 5 Nodes by Degree Centrality:")
+print(centrality_df.sort_values('Degree Centrality', ascending=False).head())
+
+print("\n🔝 Top 5 Nodes by Closeness Centrality:")
+print(centrality_df.sort_values('Closeness Centrality', ascending=False).head())
+
+print("\n🔝 Top 5 Nodes by Betweenness Centrality:")
+print(centrality_df.sort_values('Betweenness Centrality', ascending=False).head())
+
+print("\n🔝 Top 5 Nodes by Eigenvector Centrality:")
+print(centrality_df.sort_values('Eigenvector Centrality', ascending=False).head())
+
+
+
+
+
+Analyze Zachary's Karate Club network using NetworkX. Detect communities using the Girvan–Newman algorithm and interpret the splits.
+import networkx as nx
+import matplotlib.pyplot as plt
+from networkx.algorithms.community import girvan_newman
+import itertools
+
+G = nx.karate_club_graph()
+
+from networkx.algorithms.community import girvan_newman
+
+communities = girvan_newman(G)
+
+first_level_communities = next(communities)
+comm_list = [list(c) for c in first_level_communities]
+
+print("🔍 Detected Communities (First Split):")
+for i, group in enumerate(comm_list):
+    print(f"Community {i + 1}: {group}")
+
+color_map = {}
+for i, community in enumerate(comm_list):
+    for node in community:
+        color_map[node] = i
+
+node_colors = [color_map[node] for node in G.nodes()]
+
+plt.figure(figsize=(10, 7))
+pos = nx.spring_layout(G, seed=42)
+nx.draw(G, pos, node_color=node_colors, with_labels=True, cmap=plt.cm.Set1, node_size=800)
+plt.title("Zachary's Karate Club - Girvan–Newman Community Detection (First Split)")
+plt.show()
+
+
+
+
